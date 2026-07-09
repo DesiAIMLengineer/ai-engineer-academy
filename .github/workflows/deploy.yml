@@ -1,4 +1,4 @@
-name: Deploy to Koyeb
+name: Deploy to Render
 
 on:
   push:
@@ -10,22 +10,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-
-      - run: npm ci
-
-      - run: npm start &
-        env:
-          PORT: 4000
-          JWT_SECRET: test-secret
-
-      - name: Trigger Koyeb Deployment
+      - name: Trigger Render Deploy
         run: |
-          curl -X POST \
-            -H "Authorization: Bearer ${{ secrets.KOYEB_API_TOKEN }}" \
-            https://app.koyeb.com/v1/services/${{ secrets.KOYEB_SERVICE_ID }}/redeploy
+          curl -X POST "${{ secrets.RENDER_DEPLOY_HOOK }}"
