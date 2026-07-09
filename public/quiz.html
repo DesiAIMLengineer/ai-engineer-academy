@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Weekly Quiz — AI Engineer Academy</title>
+<link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar"></aside>
+    <main class="main">
+      <h1>Weekly Quiz</h1>
+      <p class="muted">5 questions per week. Retake anytime — your best score counts.</p>
+
+      <div class="card" style="margin:18px 0;">
+        <label class="muted" style="font-size:12px;">SELECT WEEK</label>
+        <select id="weekSelect" style="margin-top:6px;"></select>
+      </div>
+
+      <div id="quizCard" class="card" style="display:none;">
+        <h2 id="quizTitle"></h2>
+        <div id="questions"></div>
+        <button class="btn-primary" id="submitBtn" onclick="submitQuiz()">Submit answers</button>
+        <div id="resultBox" style="margin-top:16px;"></div>
+      </div>
+
+      <div class="card" style="margin-top:16px;">
+        <h2>History</h2>
+        <div id="historyBox" class="muted">No attempts yet.</div>
+      </div>
+    </main>
+  </div>
+
+<script src="/js/app.js"></script>
+<script>
+  requireAuth();
+  renderSidebar("/quiz.html");
+
+  let currentWeek = null;
+  let selected = [];
+  let questions = [];
+
+  async function loadWeekOptions() {
+    const curriculumData = await api("/curriculum");
+    const select = document.getElementById("weekSelect");
+    select.innerHTML = curriculumData.weeks
+      .map((w) => `<option value="${w.week}">Week ${w.week} — ${w.title}</option>`)
+      .join("");
+    select.onchange = () => loadQuiz(select.value);
+
+    const params = new URLSearchParams(window.location.search);
+    const initial = params.get("week") || curriculumData.weeks[0].week;
+    select.value = initial;
+    loadQuiz(initial);
+    loadHistory();
+  }
+
+  async function loadQuiz(week) {
+    currentWeek = week;
+    const data = await api("/quiz/" + week);
+    questions = data.questions;
+    selected = new Array(questions.length).fill(null);
+
+    document.getElementById("quizCard").style.display = "block";
+    document.getElementById("quizTitle").textContent = `Week ${data.week} — ${data.title}`;
+    document.getElementById("resultBox").innerHTML = "";
+    document.getElementById("submitBtn").style.display = "inline-block";
+
+    document.getElementById("questions").innerHTML = questions
+      .map(
+        (q, qi) => `
+        <div class="quiz-q">
+          <div class="q-text">${qi + 1}. ${q.q}</div>
+          ${q.options
+            .map(
+              (opt, oi) =>
+                `<label class="quiz-option" id="opt-${qi}-${oi}" onclick="selectOption(${qi}, ${oi})">
+                  <input type="radio" name="q${qi}" style="margin-right:8px;" /> ${opt}
+                </label>`
+            )
+            .join("")}
+        </div>`
+      )
+      .join("");
+  }
+
+  function selectOption(qi, oi) {
+    selected[qi] = oi;
+    document.querySelectorAll(`[id^="opt-${qi}-"]`).forEach((el) => el.classList.remove("selected"));
+    document.getElementById(`opt-${qi}-${oi}`).classList.add("selected");
+    document.querySelector(`#opt-${qi}-${oi} input`).checked = true;
+  }
+
+  async function submitQuiz() {
+    if (selected.includes(null)) {
+      alert("Please answer every question before submitting.");
+      return;
+    }
+    const data = await api(`/quiz/${currentWeek}/submit`, {
+      method: "POST",
+      body: JSON.stringify({ answers: selected }),
+    });
+
+    data.feedback.forEach((f, qi) => {
+      document.getElementById(`opt-${qi}-${f.correctAnswer}`).classList.add("correct");
+      if (!f.correct) document.getElementById(`opt-${qi}-${selected[qi]}`).classList.add("incorrect");
+    });
+
+    document.getElementById("submitBtn").style.display = "none";
+    const pct = Math.round((data.score / data.total) * 100);
+    document.getElementById("resultBox").innerHTML = `
+      <div class="pill ${pct >= 60 ? "signal" : "ember"}">SCORE: ${data.score}/${data.total} (${pct}%)</div>
+      <p class="muted" style="margin-top:8px;">${pct >= 80 ? "Strong grasp of this week's material." : pct >= 60 ? "Solid — review the missed items before moving on." : "Worth revisiting this week's resources before the next one."}</p>
+    `;
+    loadHistory();
+  }
+
+  async function loadHistory() {
+    const data = await api("/quiz-history");
+    if (!data.history.length) return;
+    const byWeek = {};
+    data.history.forEach((h) => {
+      if (!byWeek[h.week] || byWeek[h.week].score / byWeek[h.week].total < h.score / h.total) byWeek[h.week] = h;
+    });
+    document.getElementById("historyBox").innerHTML = Object.values(byWeek)
+      .sort((a, b) => a.week - b.week)
+      .map((h) => `<div style="padding:6px 0; border-bottom:1px solid var(--border);">Week ${h.week}: <span class="mono" style="color:var(--signal);">${h.score}/${h.total}</span></div>`)
+      .join("");
+  }
+
+  loadWeekOptions().catch((e) => console.error(e));
+</script>
+</body>
+</html>

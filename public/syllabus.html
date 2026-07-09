@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Syllabus — AI Engineer Academy</title>
+<link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar"></aside>
+    <main class="main">
+      <h1>Syllabus</h1>
+      <p class="muted">26 weeks · check off each task as you finish it. Progress saves automatically.</p>
+
+      <div style="margin:18px 0;">
+        <select id="weekJump"></select>
+      </div>
+
+      <div id="weeksContainer"></div>
+    </main>
+  </div>
+
+<script src="/js/app.js"></script>
+<script>
+  requireAuth();
+  renderSidebar("/syllabus.html");
+
+  let doneSet = new Set();
+
+  async function toggleItem(itemId, week, checked) {
+    if (checked) doneSet.add(itemId); else doneSet.delete(itemId);
+    renderWeekProgress(week);
+    try {
+      await api("/progress", { method: "POST", body: JSON.stringify({ week, itemId, completed: checked }) });
+    } catch (e) { console.error(e); }
+  }
+
+  function renderWeekProgress(weekNum) {
+    const bar = document.getElementById("bar-" + weekNum);
+    const label = document.getElementById("label-" + weekNum);
+    if (!bar) return;
+    const items = document.querySelectorAll(`.checklist-item[data-week="${weekNum}"]`);
+    const total = items.length;
+    let done = 0;
+    items.forEach((el) => { if (doneSet.has(el.dataset.item)) done++; });
+    bar.style.width = Math.round((done / total) * 100) + "%";
+    label.textContent = `${done}/${total} done`;
+  }
+
+  async function load() {
+    const [curriculumData, progressData] = await Promise.all([api("/curriculum"), api("/progress")]);
+    doneSet = new Set(progressData.progress.filter((p) => p.completed).map((p) => p.item_id));
+
+    const jump = document.getElementById("weekJump");
+    jump.innerHTML = curriculumData.weeks
+      .map((w) => `<option value="week-${w.week}">Week ${w.week} — ${w.title}</option>`)
+      .join("");
+    jump.onchange = () => document.getElementById(jump.value)?.scrollIntoView({ behavior: "smooth", block: "start" });
+
+    const container = document.getElementById("weeksContainer");
+    container.innerHTML = curriculumData.weeks
+      .map((w) => {
+        const checklistHtml = w.checklist
+          .map(
+            (item) => `
+            <label class="checklist-item ${doneSet.has(item.id) ? "done" : ""}" data-week="${w.week}" data-item="${item.id}">
+              <input type="checkbox" ${doneSet.has(item.id) ? "checked" : ""}
+                onchange="onItemToggle(this, '${item.id}', ${w.week})" />
+              <span class="item-text">${item.text}</span>
+              <span class="item-hours mono">${item.hours}h</span>
+            </label>`
+          )
+          .join("");
+
+        const resourcesHtml = w.resources
+          .map((r) => `<div>→ <a href="${r.url}" target="_blank" rel="noopener">${r.name}</a></div>`)
+          .join("");
+
+        return `
+        <div class="card" id="week-${w.week}" style="margin-bottom:16px;">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px;">
+            <div>
+              <div class="pill ember">WEEK ${w.week} · ~${w.hoursTarget}h</div>
+              <h2 style="margin-top:8px;">${w.title}</h2>
+              <p class="muted">${w.goal}</p>
+            </div>
+            <a href="/quiz.html?week=${w.week}" class="btn-secondary" style="white-space:nowrap;">Take quiz →</a>
+          </div>
+
+          <div class="progress-bar" style="margin:14px 0 4px;">
+            <div class="progress-bar-fill" id="bar-${w.week}" style="width:0%"></div>
+          </div>
+          <div class="muted mono" id="label-${w.week}" style="margin-bottom:14px; font-size:12px;"></div>
+
+          <div>${checklistHtml}</div>
+
+          <div style="margin-top:14px;">
+            <div class="muted" style="font-size:12px; margin-bottom:6px;">RESOURCES</div>
+            ${resourcesHtml}
+          </div>
+        </div>`;
+      })
+      .join("");
+
+    curriculumData.weeks.forEach((w) => renderWeekProgress(w.week));
+
+    // deep-link ?week=N
+    const params = new URLSearchParams(window.location.search);
+    const target = params.get("week");
+    if (target) document.getElementById("week-" + target)?.scrollIntoView();
+  }
+
+  function onItemToggle(checkbox, itemId, week) {
+    checkbox.closest(".checklist-item").classList.toggle("done", checkbox.checked);
+    toggleItem(itemId, week, checkbox.checked);
+  }
+
+  load().catch((e) => console.error(e));
+</script>
+</body>
+</html>

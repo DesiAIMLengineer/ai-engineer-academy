@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Ask a Doubt — AI Engineer Academy</title>
+<link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar"></aside>
+    <main class="main">
+      <h1>Ask a Doubt</h1>
+      <p class="muted">
+        Runs a small AI model directly in your browser tab — free, private, no API key, no token limits.
+        First load downloads the model (once, then it's cached).
+      </p>
+
+      <div class="card" style="margin:18px 0;">
+        <label class="muted" style="font-size:12px;">MODEL</label>
+        <select id="modelSelect" style="margin-top:6px; max-width:420px;">
+          <option value="Llama-3.2-1B-Instruct-q4f16_1-MLC">Llama 3.2 1B — fastest, lowest RAM</option>
+          <option value="Llama-3.2-3B-Instruct-q4f16_1-MLC">Llama 3.2 3B — smarter, needs more RAM</option>
+          <option value="Phi-3.5-mini-instruct-q4f16_1-MLC">Phi 3.5 mini — strong at reasoning</option>
+        </select>
+        <button class="btn-primary" id="loadBtn" onclick="loadModel()" style="margin-left:8px;">Load model</button>
+        <div id="loadStatus" class="muted" style="margin-top:10px;"></div>
+        <div class="progress-bar" id="loadBar" style="display:none; margin-top:8px;">
+          <div class="progress-bar-fill" id="loadBarFill" style="width:0%"></div>
+        </div>
+      </div>
+
+      <div class="card" id="chatCard" style="display:none;">
+        <div class="chat-window" id="chatWindow"></div>
+        <div class="chat-input-row">
+          <input type="text" id="chatInput" placeholder="Ask about anything in the syllabus..." onkeydown="if(event.key==='Enter') sendMessage()" />
+          <button class="btn-primary" onclick="sendMessage()" id="sendBtn">Send</button>
+        </div>
+      </div>
+    </main>
+  </div>
+
+<script src="/js/app.js"></script>
+<script type="module">
+  import * as webllm from "https://esm.run/@mlc-ai/web-llm";
+
+  requireAuth();
+  renderSidebar("/chatbot.html");
+
+  let engine = null;
+  let history = [
+    {
+      role: "system",
+      content:
+        "You are a friendly, patient tutor for a complete beginner going through a 6-month self-taught AI Engineer curriculum (Python, math, classical ML, deep learning, NLP/Transformers, then LLM engineering: prompting, RAG, agents, local models). Give clear, encouraging, concise explanations with simple examples. If the learner seems stuck or discouraged, be supportive and break the concept into smaller steps rather than overwhelming them.",
+    },
+  ];
+
+  window.loadModel = async function () {
+    const modelId = document.getElementById("modelSelect").value;
+    document.getElementById("loadBtn").disabled = true;
+    document.getElementById("loadBar").style.display = "block";
+    document.getElementById("loadStatus").textContent = "Preparing download...";
+
+    try {
+      engine = await webllm.CreateMLCEngine(modelId, {
+        initProgressCallback: (report) => {
+          document.getElementById("loadStatus").textContent = report.text;
+          const pct = Math.round((report.progress || 0) * 100);
+          document.getElementById("loadBarFill").style.width = pct + "%";
+        },
+      });
+      document.getElementById("loadStatus").textContent = "Model ready — cached in this browser for next time.";
+      document.getElementById("chatCard").style.display = "block";
+      addMsg("bot", "Hi! I'm your doubt-clearing tutor, running fully in your browser. Ask me anything from the syllabus — stuck on a concept, an error, or just want something re-explained more simply.");
+    } catch (err) {
+      document.getElementById("loadStatus").textContent =
+        "Couldn't load the model in this browser (it needs WebGPU support — try latest Chrome or Edge). Error: " + err.message;
+    }
+    document.getElementById("loadBtn").disabled = false;
+  };
+
+  function addMsg(role, text) {
+    const win = document.getElementById("chatWindow");
+    const div = document.createElement("div");
+    div.className = "chat-msg " + role;
+    div.textContent = text;
+    win.appendChild(div);
+    win.scrollTop = win.scrollHeight;
+    return div;
+  }
+
+  window.sendMessage = async function () {
+    const input = document.getElementById("chatInput");
+    const text = input.value.trim();
+    if (!text || !engine) return;
+    input.value = "";
+    addMsg("user", text);
+    history.push({ role: "user", content: text });
+
+    const botDiv = addMsg("bot", "…thinking");
+    document.getElementById("sendBtn").disabled = true;
+
+    try {
+      const reply = await engine.chat.completions.create({ messages: history, temperature: 0.6 });
+      const answer = reply.choices[0].message.content;
+      botDiv.textContent = answer;
+      history.push({ role: "assistant", content: answer });
+      // Keep history from growing unbounded (small local models have limited context).
+      if (history.length > 14) history = [history[0], ...history.slice(-12)];
+    } catch (err) {
+      botDiv.textContent = "Something went wrong generating a reply: " + err.message;
+    }
+    document.getElementById("sendBtn").disabled = false;
+    document.getElementById("chatWindow").scrollTop = document.getElementById("chatWindow").scrollHeight;
+  };
+</script>
+</body>
+</html>

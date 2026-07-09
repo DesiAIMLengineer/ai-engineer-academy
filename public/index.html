@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AI Engineer Academy</title>
+<link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="auth-wrap">
+    <div class="card auth-card">
+      <div style="text-align:center; margin-bottom:22px;">
+        <div style="font-size:28px; color:var(--ember);">◆</div>
+        <h1>AI Engineer Academy</h1>
+        <p class="muted">A 6-month path from zero to AI Engineer.</p>
+      </div>
+
+      <div class="auth-tabs">
+        <button id="tabLogin" class="active" onclick="switchTab('login')">Log in</button>
+        <button id="tabRegister" onclick="switchTab('register')">Create account</button>
+      </div>
+
+      <form id="loginForm" onsubmit="handleLogin(event)">
+        <div style="margin-bottom:12px;">
+          <input type="email" id="loginEmail" placeholder="Email" required />
+        </div>
+        <div style="margin-bottom:12px;">
+          <input type="password" id="loginPassword" placeholder="Password" required />
+        </div>
+        <button type="submit" class="btn-primary" style="width:100%;">Log in</button>
+        <div class="error-text" id="loginError"></div>
+      </form>
+
+      <form id="registerForm" onsubmit="handleRegister(event)" style="display:none;">
+        <div style="margin-bottom:12px;">
+          <input type="text" id="regName" placeholder="Your name" required />
+        </div>
+        <div style="margin-bottom:12px;">
+          <input type="email" id="regEmail" placeholder="Email" required />
+        </div>
+        <div style="margin-bottom:12px;">
+          <input type="password" id="regPassword" placeholder="Password (6+ characters)" required minlength="6" />
+        </div>
+        <button type="submit" class="btn-primary" style="width:100%;">Create account</button>
+        <div class="error-text" id="registerError"></div>
+      </form>
+    </div>
+  </div>
+
+<script src="/js/app.js"></script>
+<script>
+  if (getToken()) window.location.href = "/dashboard.html";
+
+  function switchTab(tab) {
+    document.getElementById("tabLogin").classList.toggle("active", tab === "login");
+    document.getElementById("tabRegister").classList.toggle("active", tab === "register");
+    document.getElementById("loginForm").style.display = tab === "login" ? "block" : "none";
+    document.getElementById("registerForm").style.display = tab === "register" ? "block" : "none";
+  }
+
+  async function handleLogin(e) {
+    e.preventDefault();
+    const email = document.getElementById("loginEmail").value;
+    const password = document.getElementById("loginPassword").value;
+    const errEl = document.getElementById("loginError");
+    errEl.textContent = "";
+    try {
+      const data = await api("/login", { method: "POST", body: JSON.stringify({ email, password }) });
+      setSession(data.token, data.user);
+      window.location.href = "/dashboard.html";
+    } catch (err) {
+      errEl.textContent = err.message;
+    }
+  }
+
+  async function handleRegister(e) {
+    e.preventDefault();
+    const name = document.getElementById("regName").value;
+    const email = document.getElementById("regEmail").value;
+    const password = document.getElementById("regPassword").value;
+    const errEl = document.getElementById("registerError");
+    errEl.textContent = "";
+    try {
+      const data = await api("/register", { method: "POST", body: JSON.stringify({ name, email, password }) });
+      setSession(data.token, data.user);
+      window.location.href = "/dashboard.html";
+    } catch (err) {
+      errEl.textContent = err.message;
+    }
+  }
+</script>
+</body>
+</html>

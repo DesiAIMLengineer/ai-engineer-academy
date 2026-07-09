@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Time Tracker — AI Engineer Academy</title>
+<link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar"></aside>
+    <main class="main">
+      <h1>Time Tracker</h1>
+      <p class="muted">Start it before you open your notes. Stop it when you're done. That's the whole trick.</p>
+
+      <div class="card" style="margin:18px 0; max-width:420px;">
+        <div class="timer-display mono" id="timerDisplay">00:00:00</div>
+        <div class="timer-controls">
+          <button class="btn-primary" id="startBtn" onclick="startTimer()">Start session</button>
+          <button class="btn-secondary" id="stopBtn" onclick="stopTimer()" style="display:none;">Stop & log</button>
+        </div>
+        <div class="muted" style="text-align:center; margin-top:12px;" id="motivationLine"></div>
+      </div>
+
+      <div class="grid grid-3">
+        <div class="card">
+          <div class="stat-value" id="todayStat">—</div>
+          <div class="stat-label">Studied today</div>
+        </div>
+        <div class="card">
+          <div class="stat-value" id="weekStat">—</div>
+          <div class="stat-label">Last 7 days</div>
+        </div>
+        <div class="card">
+          <div class="stat-value" id="streakStat">—</div>
+          <div class="stat-label">Day streak</div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:16px;">
+        <h2>Manual log</h2>
+        <p class="muted">Forgot to start the timer? Add the time after the fact.</p>
+        <div style="display:flex; gap:8px; margin-top:10px; max-width:360px;">
+          <input type="number" id="manualMinutes" placeholder="Minutes" min="1" />
+          <button class="btn-secondary" onclick="manualLog()">Log time</button>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:16px;">
+        <h2>Last 14 days</h2>
+        <div id="historyChart" style="display:flex; align-items:flex-end; gap:6px; height:100px; margin-top:12px;"></div>
+      </div>
+    </main>
+  </div>
+
+<script src="/js/app.js"></script>
+<script>
+  requireAuth();
+  renderSidebar("/tracker.html");
+
+  let running = false;
+  let startTime = null;
+  let tickHandle = null;
+
+  const MOTIVATION = [
+    "Small, consistent sessions beat rare marathon ones. This counts.",
+    "Nobody feels 'motivated' before starting. Motivation shows up after.",
+    "You don't need 6 hours. You need this one session.",
+    "Every checked box on the syllabus started with a timer like this one.",
+    "Future-you is going to be very glad present-you pressed start.",
+  ];
+
+  function startTimer() {
+    running = true;
+    startTime = Date.now();
+    document.getElementById("startBtn").style.display = "none";
+    document.getElementById("stopBtn").style.display = "inline-block";
+    document.getElementById("motivationLine").textContent = MOTIVATION[Math.floor(Math.random() * MOTIVATION.length)];
+    tickHandle = setInterval(updateDisplay, 1000);
+  }
+
+  function updateDisplay() {
+    const elapsed = Date.now() - startTime;
+    const h = String(Math.floor(elapsed / 3600000)).padStart(2, "0");
+    const m = String(Math.floor((elapsed % 3600000) / 60000)).padStart(2, "0");
+    const s = String(Math.floor((elapsed % 60000) / 1000)).padStart(2, "0");
+    document.getElementById("timerDisplay").textContent = `${h}:${m}:${s}`;
+  }
+
+  async function stopTimer() {
+    running = false;
+    clearInterval(tickHandle);
+    const minutes = Math.max(1, Math.round((Date.now() - startTime) / 60000));
+    document.getElementById("startBtn").style.display = "inline-block";
+    document.getElementById("stopBtn").style.display = "none";
+    document.getElementById("timerDisplay").textContent = "00:00:00";
+
+    try {
+      await api("/timer/log", { method: "POST", body: JSON.stringify({ minutes, note: "session" }) });
+      document.getElementById("motivationLine").textContent = `Logged ${fmtMinutes(minutes)}. Nicely done.`;
+      loadStats();
+    } catch (e) { console.error(e); }
+  }
+
+  async function manualLog() {
+    const val = Number(document.getElementById("manualMinutes").value);
+    if (!val || val <= 0) return;
+    await api("/timer/log", { method: "POST", body: JSON.stringify({ minutes: val, note: "manual" }) });
+    document.getElementById("manualMinutes").value = "";
+    loadStats();
+  }
+
+  async function loadStats() {
+    const stats = await api("/timer/stats");
+    document.getElementById("todayStat").textContent = fmtMinutes(stats.todayMinutes);
+    document.getElementById("weekStat").textContent = fmtMinutes(stats.weekMinutes);
+    document.getElementById("streakStat").textContent = stats.streak + (stats.streak === 1 ? " day" : " days");
+
+    // last 14 days bar chart
+    const days = [];
+    const map = {};
+    stats.days.forEach((d) => (map[d.log_date] = d.minutes));
+    for (let i = 13; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const key = d.toISOString().slice(0, 10);
+      days.push({ key, minutes: map[key] || 0 });
+    }
+    const max = Math.max(60, ...days.map((d) => d.minutes));
+    document.getElementById("historyChart").innerHTML = days
+      .map((d) => {
+        const h = Math.max(3, Math.round((d.minutes / max) * 90));
+        const label = new Date(d.key).toLocaleDateString(undefined, { weekday: "narrow" });
+        return `<div style="flex:1; display:flex; flex-direction:column; align-items:center; gap:4px;">
+          <div title="${fmtMinutes(d.minutes)}" style="width:100%; height:${h}px; background:${d.minutes > 0 ? "var(--ember)" : "var(--paper-raised)"}; border-radius:3px 3px 0 0;"></div>
+          <div class="muted" style="font-size:10px;">${label}</div>
+        </div>`;
+      })
+      .join("");
+  }
+
+  loadStats().catch((e) => console.error(e));
+</script>
+</body>
+</html>
